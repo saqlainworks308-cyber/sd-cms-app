@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">SD-CMS</string>
+    <string name="chambers_subtitle">Dilawar &amp; Saqlain • Case Management</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_diary">Diary</string>
+    <string name="nav_calendar">Calendar</string>
+    <string name="nav_cases">Cases</string>
+    <string name="nav_sync">Sync</string>
+    <string name="share_app_url"></string>
+    <string name="notification_channel_name">SD-CMS Hearings &amp; Deadlines</string>
+    <string name="notification_channel_desc">Automated reminders for upcoming hearings, filing deadlines, and daily cause lists</string>
+</resources>

@@ -1,0 +1,6 @@
+{
+  "name": "SD-CMS",
+  "description": "Dilawar & Saqlain Case Management System — litigation tracker with link-based calendar sync, Court Diary (Daily/Week/Month), Cause List email export, and automated reminders.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

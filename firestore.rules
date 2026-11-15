@@ -1,0 +1,231 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOptionalStr(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isOptionalInt(data, key, minVal, maxVal) {
+      return !(key in data) || (data[key] is int && data[key] >= minVal && data[key] <= maxVal);
+    }
+
+    function isValidLitigationCase(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.caseNumber is string && data.caseNumber.size() >= 1 && data.caseNumber.size() <= 80 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.status in ['active', 'pending_filing', 'adjourned', 'disposed'] &&
+        data.priority in ['critical', 'high', 'standard'] &&
+        data.nextHearingEpochMs is int && data.nextHearingEpochMs >= 0 &&
+        data.filingDeadlineEpochMs is int && data.filingDeadlineEpochMs >= 0 &&
+        isOptionalStr(data, 'courtName', 160) &&
+        isOptionalStr(data, 'courtRoom', 80) &&
+        isOptionalStr(data, 'judgeName', 120) &&
+        isOptionalStr(data, 'clientName', 140) &&
+        isOptionalStr(data, 'clientEmail', 160) &&
+        isOptionalStr(data, 'opposingParty', 160) &&
+        isOptionalStr(data, 'opposingCounsel', 140) &&
+        isOptionalStr(data, 'stage', 100) &&
+        isOptionalInt(data, 'hearingDurationMinutes', 5, 1440) &&
+        isOptionalInt(data, 'reminderMinutesBefore', 0, 10080) &&
+        isOptionalStr(data, 'googleKeepUrl', 500) &&
+        isOptionalStr(data, 'googleKeepLabel', 120) &&
+        isOptionalStr(data, 'googleSheetUrl', 500) &&
+        isOptionalStr(data, 'calendarEventId', 200) &&
+        isOptionalStr(data, 'calendarSourceId', 128) &&
+        isOptionalStr(data, 'notes', 4000);
+    }
+
+    function isValidLitigationTask(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.category in ['hearing_prep', 'filing', 'client_call', 'research', 'cause_list', 'general'] &&
+        data.priority in ['critical', 'high', 'standard'] &&
+        data.dueEpochMs is int && data.dueEpochMs >= 0 &&
+        data.completed is bool &&
+        isOptionalStr(data, 'caseId', 128) &&
+        isOptionalStr(data, 'caseNumber', 80) &&
+        isOptionalStr(data, 'description', 1000) &&
+        (!('reminderEnabled' in data) || data.reminderEnabled is bool) &&
+        isOptionalStr(data, 'keepNoteUrl', 500);
+    }
+
+    function isValidPlatformLink(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.type in ['ics_calendar', 'google_sheet', 'google_keep'] &&
+        data.label is string && data.label.size() >= 1 && data.label.size() <= 120 &&
+        data.url is string && data.url.size() >= 1 && data.url.size() <= 1000 &&
+        data.autoSync is bool &&
+        isOptionalInt(data, 'lastSyncedEpochMs', 0, 9999999999999) &&
+        isOptionalInt(data, 'syncedItemCount', 0, 100000) &&
+        isOptionalStr(data, 'lastError', 300);
+    }
+
+    function isValidSyncedCalendarEvent(data, userId) {
+      return data.userId is string && data.userId == userId &&
+        data.externalUid is string && data.externalUid.size() >= 1 && data.externalUid.size() <= 256 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 240 &&
+        data.startEpochMs is int && data.startEpochMs >= 0 &&
+        data.endEpochMs is int && data.endEpochMs >= 0 &&
+        data.allDay is bool &&
+        isOptionalStr(data, 'sourceId', 128) &&
+        isOptionalStr(data, 'sourceLabel', 120) &&
+        isOptionalStr(data, 'location', 240) &&
+        isOptionalStr(data, 'description', 2000) &&
+        isOptionalStr(data, 'linkedCaseId', 128) &&
+        isOptionalStr(data, 'keepNoteUrl', 500) &&
+        isOptionalStr(data, 'deviceEventId', 128);
+    }
+
+    match /users/{userId}/cases/{caseId} {
+      allow get: if isOwner(userId) && isValidId(caseId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        isValidId(caseId) &&
+        incoming().keys().hasAll([
+          'userId', 'caseNumber', 'title', 'status', 'priority',
+          'nextHearingEpochMs', 'filingDeadlineEpochMs', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'caseNumber', 'title', 'courtName', 'courtRoom', 'judgeName',
+          'clientName', 'clientEmail', 'opposingParty', 'opposingCounsel', 'stage',
+          'status', 'priority', 'nextHearingEpochMs', 'filingDeadlineEpochMs',
+          'hearingDurationMinutes', 'reminderMinutesBefore', 'googleKeepUrl',
+          'googleKeepLabel', 'googleSheetUrl', 'calendarEventId', 'calendarSourceId',
+          'notes', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        isValidLitigationCase(incoming(), userId);
+      allow update: if isOwner(userId) &&
+        isValidId(caseId) &&
+        isValidLitigationCase(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'caseNumber', 'title', 'courtName', 'courtRoom', 'judgeName',
+          'clientName', 'clientEmail', 'opposingParty', 'opposingCounsel', 'stage',
+          'status', 'priority', 'nextHearingEpochMs', 'filingDeadlineEpochMs',
+          'hearingDurationMinutes', 'reminderMinutesBefore', 'googleKeepUrl',
+          'googleKeepLabel', 'googleSheetUrl', 'calendarEventId', 'calendarSourceId',
+          'notes', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) && isValidId(caseId);
+    }
+
+    match /users/{userId}/tasks/{taskId} {
+      allow get: if isOwner(userId) && isValidId(taskId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        isValidId(taskId) &&
+        incoming().keys().hasAll([
+          'userId', 'title', 'category', 'priority', 'dueEpochMs',
+          'completed', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'caseId', 'caseNumber', 'title', 'description',
+          'category', 'priority', 'dueEpochMs', 'completed',
+          'reminderEnabled', 'keepNoteUrl', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        isValidLitigationTask(incoming(), userId);
+      allow update: if isOwner(userId) &&
+        isValidId(taskId) &&
+        isValidLitigationTask(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'caseId', 'caseNumber', 'title', 'description',
+          'category', 'priority', 'dueEpochMs', 'completed',
+          'reminderEnabled', 'keepNoteUrl', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) && isValidId(taskId);
+    }
+
+    match /users/{userId}/integrations/{integrationId} {
+      allow get: if isOwner(userId) && isValidId(integrationId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        isValidId(integrationId) &&
+        incoming().keys().hasAll([
+          'userId', 'type', 'label', 'url', 'autoSync', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'type', 'label', 'url', 'autoSync',
+          'lastSyncedEpochMs', 'syncedItemCount', 'lastError', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        isValidPlatformLink(incoming(), userId);
+      allow update: if isOwner(userId) &&
+        isValidId(integrationId) &&
+        isValidPlatformLink(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'type', 'label', 'url', 'autoSync',
+          'lastSyncedEpochMs', 'syncedItemCount', 'lastError', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) && isValidId(integrationId);
+    }
+
+    match /users/{userId}/calendar_events/{eventId} {
+      allow get: if isOwner(userId) && isValidId(eventId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        isValidId(eventId) &&
+        incoming().keys().hasAll([
+          'userId', 'externalUid', 'title', 'startEpochMs', 'endEpochMs',
+          'allDay', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'externalUid', 'sourceId', 'sourceLabel', 'title',
+          'location', 'description', 'startEpochMs', 'endEpochMs', 'allDay',
+          'linkedCaseId', 'keepNoteUrl', 'deviceEventId', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        isValidSyncedCalendarEvent(incoming(), userId);
+      allow update: if isOwner(userId) &&
+        isValidId(eventId) &&
+        isValidSyncedCalendarEvent(incoming(), userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'externalUid', 'sourceId', 'sourceLabel', 'title',
+          'location', 'description', 'startEpochMs', 'endEpochMs', 'allDay',
+          'linkedCaseId', 'keepNoteUrl', 'deviceEventId', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) && isValidId(eventId);
+    }
+  }
+}
